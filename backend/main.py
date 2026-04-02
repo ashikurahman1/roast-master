@@ -1,11 +1,20 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
+import os 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
 # API Key  
-genai.configure(api_key="AIzaSyBocnsCWs2HU57gjkTBIOrPZOWGD6YPWNY")
+
+api_key = os.getenv("api_key")
+if not api_key:
+    print("Error: api_key নট ফাউন্ড। Render Settings চেক করুন।")
+else:
+    genai.configure(api_key=api_key)
 
 # Check Model List
 try:
@@ -44,4 +53,4 @@ async def roast_me(file: UploadFile = File(...)):
         
         return {"roast": response.text}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"AI একটু বিজি আছে! এরর: {str(e)}"}
