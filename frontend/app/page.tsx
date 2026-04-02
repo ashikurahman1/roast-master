@@ -22,7 +22,7 @@ export default function Home() {
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
-      if (preview) URL.revokeObjectURL(preview); // পুরনো মেমোরি ক্লিন করা
+      if (preview) URL.revokeObjectURL(preview);
       setFile(selectedFile);
       setPreview(URL.createObjectURL(selectedFile));
       setRoast(null);
