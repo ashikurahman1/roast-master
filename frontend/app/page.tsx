@@ -89,12 +89,9 @@ export default function Home() {
 
     const formData = new FormData();
     formData.append('file', file);
-    // const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     try {
-      const response = await axios.post(
-        'https://roast-master-backend.onrender.com/roast',
-        formData,
-      );
+      const response = await axios.post(`${API_URL}/roast`, formData);
       setRoast(response.data.roast);
       const newCount = usageCount + 1;
       setUsageCount(newCount);
