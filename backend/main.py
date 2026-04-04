@@ -94,7 +94,14 @@ async def roast_me(file: UploadFile = File(...)):
         
         last_exception = "No keys/models succeeded"
         
+        # Limit total attempts to avoid WORKER TIMEOUT (e.g., max 4 attempts)
+        MAX_TOTAL_ATTEMPTS = 4
+        attempts_made = 0
+        
         for current_key in api_keys:
+            if attempts_made >= MAX_TOTAL_ATTEMPTS:
+                break
+                
             try:
                 # Configure the current key
                 genai.configure(api_key=current_key)
@@ -103,14 +110,25 @@ async def roast_me(file: UploadFile = File(...)):
                 shuffled_models = MODELS.copy()
                 random.shuffle(shuffled_models)
                 
+                # Track models per key, limit to 2 models per key
+                models_tried_this_key = 0
+                
                 for model_name in shuffled_models:
+                    if attempts_made >= MAX_TOTAL_ATTEMPTS or models_tried_this_key >= 2:
+                        break
+                        
+                    attempts_made += 1
+                    models_tried_this_key += 1
+                    
                     try:
-                        logger.info(f"Using Key (prefix: {current_key[:5]}...) with Model: {model_name}")
+                        logger.info(f"Attempt {attempts_made}/{MAX_TOTAL_ATTEMPTS}: Using Key (prefix: {current_key[:5]}...) with Model: {model_name}")
                         model = genai.GenerativeModel(model_name)
-                        response = model.generate_content([
-                            prompt,
-                            {'mime_type': 'image/jpeg', 'data': image_bytes}
-                        ])
+                        
+                        # Added timeout to prevent hanging requests
+                        response = model.generate_content(
+                            [prompt, {'mime_type': 'image/jpeg', 'data': image_bytes}],
+                            request_options={"timeout": 15.0} # 15 seconds max wait per API call
+                        )
                         
                         if response and response.text:
                             return {
