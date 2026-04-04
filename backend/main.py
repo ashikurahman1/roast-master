@@ -124,10 +124,10 @@ async def roast_me(file: UploadFile = File(...)):
                         logger.info(f"Attempt {attempts_made}/{MAX_TOTAL_ATTEMPTS}: Using Key (prefix: {current_key[:5]}...) with Model: {model_name}")
                         model = genai.GenerativeModel(model_name)
                         
-                        # Added timeout to prevent hanging requests
+                        # Increased timeout to 25s since Gemini is slow
                         response = model.generate_content(
                             [prompt, {'mime_type': 'image/jpeg', 'data': image_bytes}],
-                            request_options={"timeout": 15.0} # 15 seconds max wait per API call
+                            request_options={"timeout": 25.0} 
                         )
                         
                         if response and response.text:
@@ -151,8 +151,12 @@ async def roast_me(file: UploadFile = File(...)):
         if last_exception == "ResourceExhausted":
             error_msg = "সবগুলো এপিআই কি-র লিমিট এখন বিজি! ২ মিনিট পর আবার ট্রাই করো।"
             retry_after = 120
+        elif "504" in last_exception or "CANCELLED" in last_exception or "deadline" in last_exception.lower() or "timeout" in last_exception.lower():
+            error_msg = "গুগল এপিআই সার্ভার এখন অনেক বিজি বা স্লো আছে! দয়া করে কিছুক্ষণ পর আবার ট্রাই করুন।"
+            retry_after = 0
         else:
-            error_msg = f"AI বা ব্যাকএন্ড একটু বিজি আছে! এরর: {last_exception}"
+            # Hide ugly backend tracebacks
+            error_msg = f"AI সার্ভার এই মুহূর্তে রেসপন্স করছে না! কিছুক্ষণ পর চেষ্টা করুন।"
             retry_after = 0
             
         return {"error": error_msg, "retry_after": retry_after}
