@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import html2canvas from 'html2canvas';
+import * as htmlToImage from 'html-to-image';
 import { FaFacebook, FaDownload, FaSync, FaCamera } from 'react-icons/fa';
 import Image from 'next/image';
 
@@ -12,12 +12,39 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [roast, setRoast] = useState<string | null>(null);
   const [usageCount, setUsageCount] = useState(0);
+  const [cooldown, setCooldown] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedCount = localStorage.getItem('roast_count');
     if (savedCount) setUsageCount(parseInt(savedCount));
+
+    const savedCooldown = localStorage.getItem('roast_cooldown');
+    if (savedCooldown) {
+      const remaining = Math.floor((parseInt(savedCooldown) - Date.now()) / 1000);
+      if (remaining > 0) setCooldown(remaining);
+    }
   }, []);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          localStorage.removeItem('roast_cooldown');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -55,7 +82,6 @@ export default function Home() {
 
     if (!file) return;
 
-    // লোডিং শুরু এবং মেসেজ দেখানো
     setLoading(true);
 
     let currentMsgIndex = 0;
@@ -68,7 +94,6 @@ export default function Home() {
 
     Swal.fire({
       title: loadingMessages[0],
-      // text: 'প্রসেসিং হচ্ছে...',
       allowOutsideClick: false,
       showConfirmButton: false,
       background: '#121212',
@@ -97,25 +122,28 @@ export default function Home() {
           'Content-Type': 'multipart/form-data',
         },
       });
-      console.log('Server Response:', response.data);
 
       if (response.data && response.data.roast) {
-        setRoast(response.data.roast); // স্টেট আপডেট
-
+        setRoast(response.data.roast);
         const newCount = usageCount + 1;
         setUsageCount(newCount);
         localStorage.setItem('roast_count', newCount.toString());
+      } else if (response.data && response.data.retry_after) {
+        const seconds = response.data.retry_after;
+        setCooldown(seconds);
+        localStorage.setItem('roast_cooldown', (Date.now() + seconds * 1000).toString());
+        throw new Error(response.data.error || 'Rate limit reached');
       } else {
-        throw new Error('Roast message not found in response');
+        throw new Error(response.data.error || 'Roast message not found');
       }
 
       clearInterval(msgInterval);
       Swal.close();
-    } catch (error) {
+    } catch (error: any) {
       clearInterval(msgInterval);
       Swal.fire({
         title: 'সার্ভার বেয়াদবি করতাছে!',
-        text: 'AI হয়তো আপনার চেহারা দেখে ফিট হয়ে গেছে!',
+        text: error.response?.data?.error || error.message || 'AI হয়তো আপনার চেহারা দেখে ফিট হয়ে গেছে!',
         icon: 'error',
         background: '#1a1a1a',
         color: '#fff',
@@ -129,7 +157,6 @@ export default function Home() {
     setRoast(null);
     setFile(null);
     setPreview(null);
-
     const fileInput = document.getElementById('fileInput') as HTMLInputElement;
     if (fileInput) fileInput.value = '';
   };
@@ -148,30 +175,26 @@ export default function Home() {
           },
         });
 
-        const canvas = await html2canvas(cardRef.current, {
-          useCORS: true, // ক্রস-অরিজিন ইমেজ সাপোর্ট
-          allowTaint: true, // ইমেজ টেইন্টিং এলাউ করা
-          scale: 2, // হাই কোয়ালিটি ইমেজ
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const dataUrl = await htmlToImage.toPng(cardRef.current, {
+          pixelRatio: 3,
           backgroundColor: '#6082B6',
-          logging: false,
         });
-
-        const dataUrl = canvas.toDataURL('image/png');
-
-        // ডাউনলোড লজিক (নিরাপদ পদ্ধতি)
+        
         const link = document.createElement('a');
         link.href = dataUrl;
-        link.setAttribute('download', `roast-${Date.now()}.png`);
+        link.setAttribute('download', `roast-master-${Date.now()}.png`);
         document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link); // ক্লিক শেষে রিমুভ করে দেওয়া
+        document.body.removeChild(link);
 
         Swal.close();
       } catch (err) {
         console.error('Download Error:', err);
         Swal.fire({
           title: 'ডাউনলোড ব্যর্থ!',
-          text: 'আপনার ব্রাউজার ইমেজটি জেনারেট করতে পারছে না।',
+          text: 'আপনার ব্রাউজার ইমেজটি জেনারেট করতে পারছে না। স্ক্রিনশট নিয়ে নিন!',
           icon: 'error',
           background: '#1a1a1a',
           color: '#fff',
@@ -193,13 +216,11 @@ export default function Home() {
         <div className="absolute bottom-0 left-0 right-0 top-0 bg-[radial-gradient(circle_500px_at_50%_200px,#C9EBFF,transparent)]"></div>
       </div>
       <main className="relative flex flex-col items-center py-16 px-4 font-sans selection:bg-blue-500/30 text-neutral-900">
-        {/* Header */}
         <div className="text-center mb-12 animate-in fade-in duration-700">
           <h1 className="text-5xl md:text-7xl font-black mb-2 uppercase tracking-tighter bg-gradient-to-r from-blue-600 via-blue-400 to-indigo-500 bg-clip-text text-transparent drop-shadow-sm">
             রোস্ট মাস্টার
           </h1>
           <div className="h-1.5 w-20 bg-gradient-to-r from-blue-600 to-indigo-600 mx-auto rounded-full mb-4"></div>
-
           <p className="text-neutral-800 text-[13px] uppercase font-extrabold tracking-[0.1em]">
             নিজের ছবি আপলোড করো আর AI এর মজার রোস্ট দেখো!
           </p>
@@ -213,106 +234,56 @@ export default function Home() {
                 className="relative aspect-video bg-[#FAFAFA] border border-[#FCFCFC] rounded-2xl overflow-hidden cursor-pointer group hover:border-blue-500/40 transition-all shadow-2xl"
               >
                 {preview ? (
-                  <Image
-                    unoptimized
-                    fill
-                    src={preview}
-                    className="w-full h-full object-cover"
-                    alt="Preview"
-                  />
+                  <Image unoptimized fill src={preview} className="w-full h-full object-cover" alt="Preview" />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full">
                     <div className="w-12 h-12 rounded-full bg-[#1a1a1a] flex items-center justify-center mb-3 border border-[#262626]">
                       <FaCamera className="text-neutral-300 group-hover:text-white transition-colors" />
                     </div>
-                    <span className="text-neutral-600 text-lg font-bold uppercase tracking-widest">
-                      একটি ছবি নির্বাচন করুন
-                    </span>
+                    <span className="text-neutral-600 text-lg font-bold uppercase tracking-widest">একটি ছবি নির্বাচন করুন</span>
                   </div>
                 )}
               </div>
-              <input
-                id="fileInput"
-                type="file"
-                className="hidden"
-                onChange={onFileChange}
-                accept="image/*"
-              />
-
+              <input id="fileInput" type="file" className="hidden" onChange={onFileChange} accept="image/*" />
               <button
                 onClick={handleUpload}
-                disabled={loading || !file}
-                className="w-full py-5 bg-[#2563eb] hover:bg-[#3b82f6] text-white text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all disabled:opacity-60 shadow-lg cursor-pointer"
+                disabled={loading || !file || cooldown > 0}
+                className={`w-full py-5 text-white text-xs font-black uppercase tracking-[0.2em] rounded-xl transition-all shadow-lg cursor-pointer ${cooldown > 0 ? 'bg-neutral-600' : 'bg-[#2563eb] hover:bg-[#3b82f6]'
+                  }`}
               >
-                {loading ? 'AI ছবি বিশ্লেষণ করছে...' : 'পচানি শুরু করুন'}
+                {loading ? 'AI ছবি বিশ্লেষণ করছে...' : cooldown > 0 ? `অপেক্ষা করুন (${formatTime(cooldown)})` : 'পচানি শুরু করুন'}
               </button>
             </div>
           ) : (
             <div className="space-y-8 animate-in zoom-in-95 duration-500">
-              {/* Card Result Container */}
               <div
                 ref={cardRef}
                 id="roast-card-download"
                 className="w-full bg-[#6082B6] p-8 md:p-12 rounded-[32px] flex flex-col shadow-2xl overflow-hidden"
-                style={{
-                  backgroundColor: '#6082B6',
-                  minHeight: '520px',
-                }}
+                style={{ backgroundColor: '#6082B6', minHeight: '520px' }}
               >
-                {/* User Image */}
-                <div className="mb-10 w-24 h-24 md:w-32 md:h-32 rounded-3xl overflow-hidden border border-[#FCFCFC]">
-                  <Image
-                    unoptimized
-                    height={120}
-                    width={120}
-                    src={preview!}
-                    className="w-full h-full object-cover"
-                    alt="User"
-                  />
+                <div className="mb-10 w-24 h-24 md:w-32 md:h-32 rounded-3xl overflow-hidden border border-[#FCFCFC] relative">
+                  <img src={preview!} className="w-full h-full object-cover" alt="User" />
                 </div>
-
-                {/* Roast Text Area - spacing fixed */}
                 <div style={{ flex: 1, marginBottom: '40px' }}>
-                  <h2
-                    className="italic font-medium leading-[1.5] text-[#ffffff] tracking-tight"
-                    style={{ fontSize: '18px' }}
-                  >
+                  <h2 className="italic font-medium leading-[1.5] text-[#ffffff] tracking-tight" style={{ fontSize: '18px' }}>
                     &quot;{roast}&quot;
                   </h2>
                 </div>
-
-                {/* Footer - explicit border and spacing */}
-                <div
-                  style={{ borderTop: '2px solid #5775A4', paddingTop: '24px' }}
-                >
-                  <p className="text-[12px] text-[#CED9E9] font-bold uppercase   mb-1">
-                    তৈরি করেছেন
-                  </p>
-                  <p className="text-sm font-bold text-[#ffffff] uppercase tracking-wider">
-                    Mohammad Ashikur Rahman
-                  </p>
+                <div style={{ borderTop: '2px solid #5775A4', paddingTop: '24px' }}>
+                  <p className="text-[12px] text-[#CED9E9] font-bold uppercase mb-1">تৈরি করেছেন</p>
+                  <p className="text-sm font-bold text-[#ffffff] uppercase tracking-wider">Mohammad Ashikur Rahman</p>
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={downloadImage}
-                  className="flex items-center justify-center gap-3 py-4 bg-[#6082B6] border border-[#648bc5] rounded-xl text-[12px] font-bold   hover:bg-[#5279b3] transition-all text-white cursor-pointer"
-                >
+                <button onClick={downloadImage} className="flex items-center justify-center gap-3 py-4 bg-[#6082B6] border border-[#648bc5] rounded-xl text-[12px] font-bold hover:bg-[#5279b3] transition-all text-white cursor-pointer">
                   <FaDownload className="" /> ডাউনলোড
                 </button>
-                <button
-                  onClick={shareToFB}
-                  className="flex items-center justify-center gap-3 py-4 bg-[#1877F2] rounded-xl text-[12px] font-bold hover:opacity-90 transition-all text-white cursor-pointer"
-                >
+                <button onClick={shareToFB} className="flex items-center justify-center gap-3 py-4 bg-[#1877F2] rounded-xl text-[12px] font-bold hover:opacity-90 transition-all text-white cursor-pointer">
                   <FaFacebook /> শেয়ার করুন
                 </button>
               </div>
-
-              <button
-                onClick={handleReset}
-                className="w-full text-neutral-300 text-[14px]  bg-[#000000] rounded-full hover:text-white transition-colors flex items-center justify-center gap-2 py-2 cursor-pointer"
-              >
+              <button onClick={handleReset} className="w-full text-neutral-300 text-[14px] bg-[#000000] rounded-full hover:text-white transition-colors flex items-center justify-center gap-2 py-2 cursor-pointer">
                 <FaSync className="text-[14px]" /> আবার চেষ্টা করুন
               </button>
             </div>
@@ -321,24 +292,10 @@ export default function Home() {
 
         <footer className="mt-auto pt-20 flex flex-col items-center">
           <div className="flex gap-8 text-[9px] text-neutral-700 font-black uppercase tracking-widest mb-4">
-            <a
-              href="https://www.facebook.com/ashikurrdev"
-              target="_blank"
-              className="hover:text-blue-500 transition-colors"
-            >
-              Facebook
-            </a>
-            <a
-              href="https://linkedin.com/in/ashikur-dev"
-              target="_blank"
-              className="hover:text-blue-500 transition-colors"
-            >
-              LinkedIn
-            </a>
+            <a href="https://www.facebook.com/ashikurrdev" target="_blank" className="hover:text-blue-500 transition-colors">Facebook</a>
+            <a href="https://linkedin.com/in/ashikur-dev" target="_blank" className="hover:text-blue-500 transition-colors">LinkedIn</a>
           </div>
-          <p className="text-[10px] text-neutral-600  ">
-            &copy; 2026 Developed by Tuhin
-          </p>
+          <p className="text-[10px] text-neutral-600">&copy; 2026 Developed by Tuhin</p>
         </footer>
       </main>
     </div>
