@@ -181,7 +181,7 @@ export default function Home() {
           pixelRatio: 3,
           backgroundColor: '#6082B6',
         });
-        
+
         const link = document.createElement('a');
         link.href = dataUrl;
         link.setAttribute('download', `roast-master-${Date.now()}.png`);
@@ -271,7 +271,7 @@ export default function Home() {
                   </h2>
                 </div>
                 <div style={{ borderTop: '2px solid #5775A4', paddingTop: '24px' }}>
-                  <p className="text-[12px] text-[#CED9E9] font-bold uppercase mb-1">تৈরি করেছেন</p>
+                  <p className="text-[12px] text-[#CED9E9] font-bold uppercase mb-1">তৈরি করেছেন</p>
                   <p className="text-sm font-bold text-[#ffffff] uppercase tracking-wider">Mohammad Ashikur Rahman</p>
                 </div>
               </div>
